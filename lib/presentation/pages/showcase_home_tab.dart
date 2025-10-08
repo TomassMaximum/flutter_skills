@@ -189,7 +189,22 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
                       ),
                       Expanded(
                         flex: 3,
-                        child: Center(child: Text('2025-10-08 12:00')),
+                        child: Align(
+                          alignment: AlignmentGeometry.centerRight,
+                          child: Padding(
+                            padding: EdgeInsetsGeometry.only(right: 12),
+                            child: Text(
+                              '2025-10-08 12:00',
+                              style: TextStyle(
+                                fontFamily: 'Witchwoode',
+                                fontSize: 16,
+                                color: theme.colorScheme.primary,
+                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
