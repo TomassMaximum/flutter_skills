@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:skill_showcase/repositories/photo_repository.dart';
 import 'dart:async';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import '../../models/photo_info.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ShowcaseHomeTab extends StatefulWidget {
   const ShowcaseHomeTab({super.key});
@@ -12,14 +15,8 @@ class ShowcaseHomeTab extends StatefulWidget {
 
 class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
   int _currentBanner = 0;
-  late final List<ImageProvider?> _scaledBannerImages;
-
-  final List<String> _bannerPaths = [
-    'assets/banner1.jpg',
-    'assets/banner2.jpg',
-    'assets/banner3.jpg',
-    'assets/banner4.jpg',
-  ];
+  final _repo = PhotoRepository();
+  late Future<List<PhotoInfo>> _photos;
 
   final List<Map<String, dynamic>> _blogList = [
     {
@@ -47,42 +44,8 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
   @override
   void initState() {
     super.initState();
-    _scaledBannerImages = List<ImageProvider?>.filled(
-      _bannerPaths.length,
-      null,
-    );
-    _prepareImages();
-  }
 
-  Future<void> _prepareImages() async {
-    for (int i = 0; i < _bannerPaths.length; i++) {
-      final path = _bannerPaths[i];
-      final asset = AssetImage(path);
-
-      final imageStream = asset.resolve(const ImageConfiguration());
-      final completer = Completer<ImageInfo>();
-      final listener = ImageStreamListener((info, _) {
-        completer.complete(info);
-      });
-      imageStream.addListener(listener);
-      final info = await completer.future;
-      imageStream.removeListener(listener);
-
-      final scaled = ResizeImage(
-        asset,
-        width: (info.image.width / 8).round(),
-        height: (info.image.height / 8).round(),
-      );
-
-      await precacheImage(scaled, context);
-
-      // 单独更新这一张图片
-      if (mounted) {
-        setState(() {
-          _scaledBannerImages[i] = scaled;
-        });
-      }
-    }
+    _photos = _repo.fetchPhotoManifest();
   }
 
   @override
@@ -94,12 +57,7 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
           child: Column(
             children: [
               const SizedBox(height: 56),
-              _scaledBannerImages.isEmpty
-                  ? const SizedBox(
-                      height: 200,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  : _buildBanner(theme),
+              _bannerWrapper(),
               const SizedBox(height: 24),
             ],
           ),
@@ -148,7 +106,29 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
     );
   }
 
-  Widget _buildBanner(ThemeData theme) {
+  Widget _bannerWrapper() {
+    final theme = Theme.of(context);
+    return FutureBuilder(
+      future: _photos,
+      builder: (context, snapShot) {
+        if (snapShot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 200,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        } else if (snapShot.hasError) {
+          return Center(child: Text('Error: ${snapShot.error}'));
+        } else if (snapShot.hasData) {
+          final photos = snapShot.data!;
+          return _buildBanner(theme, photos);
+        } else {
+          return const SizedBox.shrink();
+        }
+      },
+    );
+  }
+
+  Widget _buildBanner(ThemeData theme, List<PhotoInfo> photos) {
     final double screenWidth = MediaQuery.of(context).size.width;
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
@@ -157,8 +137,11 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
           height: screenWidth * 11 / 16 + 28,
           width: double.infinity,
           child: CarouselSlider(
-            items: List.generate(_scaledBannerImages.length, (i) {
-              final image = _scaledBannerImages[i];
+            items: photos.map((photo) {
+              final smallUrl = PhotoRepository.baseUrl + photo.versions['256']!;
+              final mediumUrl =
+                  PhotoRepository.baseUrl + photo.versions['1080']!;
+              // final image = _scaledBannerImages[i];
               return AspectRatio(
                 aspectRatio: 16 / 11,
                 child: Card(
@@ -178,13 +161,19 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
                             left: 12,
                             right: 12,
                           ),
-                          child: image == null
-                              ? const Center(child: CircularProgressIndicator())
-                              : Image(
-                                  image: image,
-                                  fit: BoxFit.cover,
-                                  width: double.infinity,
-                                ),
+                          child: CachedNetworkImage(
+                            imageUrl: mediumUrl,
+                            placeholder: (context, url) => Image.network(
+                              smallUrl,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                            ),
+                            errorWidget: (context, url, error) =>
+                                const Icon(Icons.error),
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                          ),
                         ),
                       ),
                       Expanded(
@@ -194,7 +183,7 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
                           child: Padding(
                             padding: EdgeInsetsGeometry.only(right: 12),
                             child: Text(
-                              '2025-10-08 12:00',
+                              photo.timeStamp.toUtc().toString(),
                               style: TextStyle(
                                 fontFamily: 'Witchwoode',
                                 fontSize: 16,
@@ -224,7 +213,7 @@ class _ShowcaseHomeTabState extends State<ShowcaseHomeTab> {
         // 指示器（示意）
         AnimatedSmoothIndicator(
           activeIndex: _currentBanner,
-          count: _scaledBannerImages.length,
+          count: photos.length,
           effect: ExpandingDotsEffect(
             dotHeight: 8,
             dotWidth: 8,
